@@ -1,0 +1,30 @@
+# Core LangChain / agent framework
+langchain
+langchain-core
+langchain-community
+langgraph
+
+# Mistral API / LangChain integration
+langchain-mistralai
+mistralai
+
+# Tavily web search
+tavily-python
+langchain-tavily
+
+# Web scraping with BeautifulSoup
+beautifulsoup4
+requests
+lxml
+
+# Environment variables / configuration
+python-dotenv
+
+# Optional but commonly useful for async HTTP/tool workflows
+aiohttp
+
+# Data validation / structured agent outputs
+pydantic
+
+# Jupyter / interactive development (optional)
+ipykernel
