@@ -318,7 +318,9 @@ header {
 
 .result-panel,
 .report-panel,
-.feedback-panel {
+.feedback-panel,
+.st-key-report_panel,
+.st-key-feedback_panel {
     background: #ffffff;
     border: 1px solid #e2e6ed;
     border-radius: 16px;
@@ -351,10 +353,21 @@ header {
 /*
    IMPORTANT: generated content is deliberately dark and uses a strong,
    block-style sans font so it remains readable on the white UI.
+
+   NOTE: the selectors below are intentionally duplicated for both the
+   legacy ".report-panel/.feedback-panel" wrapper divs AND the
+   ".st-key-report_panel/.st-key-feedback_panel" classes that
+   st.container(key=...) attaches directly to the real DOM wrapper.
+   Relying on a single selector caused text to silently fall back to
+   Streamlit's default (faded) markdown color on some deployments,
+   because the exact DOM nesting of consecutive st.markdown() calls
+   can differ slightly between Streamlit versions.
 */
 .result-content,
 .report-panel,
-.feedback-panel {
+.feedback-panel,
+.st-key-report_panel,
+.st-key-feedback_panel {
     color: #172033 !important;
     font-family: 'DM Sans', sans-serif !important;
 }
@@ -369,7 +382,9 @@ header {
 
 /* Native markdown rendered by Streamlit */
 .report-panel > div:not(.panel-label),
-.feedback-panel > div:not(.panel-label) {
+.feedback-panel > div:not(.panel-label),
+.st-key-report_panel [data-testid="stMarkdownContainer"],
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] {
     color: #172033 !important;
     font-family: 'DM Sans', sans-serif !important;
 }
@@ -379,7 +394,13 @@ header {
 .report-panel h3,
 .feedback-panel h1,
 .feedback-panel h2,
-.feedback-panel h3 {
+.feedback-panel h3,
+.st-key-report_panel [data-testid="stMarkdownContainer"] h1,
+.st-key-report_panel [data-testid="stMarkdownContainer"] h2,
+.st-key-report_panel [data-testid="stMarkdownContainer"] h3,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] h1,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] h2,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] h3 {
     font-family: 'Space Grotesk', sans-serif !important;
     color: #0d1528 !important;
     font-weight: 700 !important;
@@ -391,7 +412,13 @@ header {
 .report-panel blockquote,
 .feedback-panel p,
 .feedback-panel li,
-.feedback-panel blockquote {
+.feedback-panel blockquote,
+.st-key-report_panel [data-testid="stMarkdownContainer"] p,
+.st-key-report_panel [data-testid="stMarkdownContainer"] li,
+.st-key-report_panel [data-testid="stMarkdownContainer"] blockquote,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] p,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] li,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] blockquote {
     color: #172033 !important;
     font-family: 'DM Sans', sans-serif !important;
     font-weight: 600 !important;
@@ -399,13 +426,17 @@ header {
 }
 
 .report-panel strong,
-.feedback-panel strong {
+.feedback-panel strong,
+.st-key-report_panel [data-testid="stMarkdownContainer"] strong,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] strong {
     color: #0d1528 !important;
     font-weight: 800 !important;
 }
 
 .report-panel code,
-.feedback-panel code {
+.feedback-panel code,
+.st-key-report_panel [data-testid="stMarkdownContainer"] code,
+.st-key-feedback_panel [data-testid="stMarkdownContainer"] code {
     color: #26324a !important;
     background: #f2f4f7 !important;
 }
@@ -636,15 +667,11 @@ if r:
     st.markdown('<div class="results-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="section-heading">Results</div>', unsafe_allow_html=True)
 
-
     # Final report
     if "writer" in r:
-        st.markdown("""
-        <div class="report-panel">
-            <div class="panel-label orange">Final Research Report</div>
-        """, unsafe_allow_html=True)
-        st.markdown(r["writer"])   # render markdown natively
-        st.markdown("</div>", unsafe_allow_html=True)
+        with st.container(key="report_panel"):
+            st.markdown('<div class="panel-label orange">Final Research Report</div>', unsafe_allow_html=True)
+            st.markdown(r["writer"])   # render markdown natively
 
         # Download
         st.download_button(
@@ -656,12 +683,9 @@ if r:
 
     # Critic feedback
     if "critic" in r:
-        st.markdown("""
-        <div class="feedback-panel">
-            <div class="panel-label green">Critic Feedback</div>
-        """, unsafe_allow_html=True)
-        st.markdown(r["critic"])
-        st.markdown("</div>", unsafe_allow_html=True)
+        with st.container(key="feedback_panel"):
+            st.markdown('<div class="panel-label green">Critic Feedback</div>', unsafe_allow_html=True)
+            st.markdown(r["critic"])
 
 
 # ── Footer ────────────────────────────────────────────────────────────────────

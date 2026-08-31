@@ -73,5 +73,4 @@ def run_research_pipeline(topic : str) -> dict:
 
 if __name__ == "__main__":
     topic = input("\n Enter a research topic : ")
-    hrs24_news()
     run_research_pipeline(topic)
