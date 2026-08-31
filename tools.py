@@ -38,31 +38,4 @@ def scrape_url(url: str) -> str:
 
 import json
 
-@tool
-def latest_news() -> str:
-    """Fetch the latest news from the past 24 hours from different categories such as business, technology, politics, environment and trading."""
-
-    results = tavily.search(
-        query=(
-            "latest important news from different categories: "
-            "business, technology, politics, environment, trading, "
-            "science and AI"
-        ),
-        topic="news",
-        time_range="day",
-        max_results=6
-    )
-
-    out = []
-
-    for r in results["results"]:
-        out.append({
-            "title": r.get("title", ""),
-            "url": r.get("url", ""),
-            "source": r.get("source", "Web"),
-            "category": "LATEST",
-            "summary": r.get("content", "")[:500]
-        })
-
-    return json.dumps(out, ensure_ascii=False)
 

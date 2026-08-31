@@ -1,35 +1,6 @@
-from agents import build_reader_agent , build_search_agent , get_latest_news , writer_chain , critic_chain
+from agents import build_reader_agent , build_search_agent  , writer_chain , critic_chain
 
-def hrs24_news() -> str:
-    news_agent = get_latest_news()
 
-    news_result = news_agent.invoke({
-        "messages": [
-            (
-                "user",
-                """
-                Use the latest_news tool to get the most important
-                and relevant news from the past 24 hours.
-
-                The news should cover different categories such as:
-                - Technology
-                - AI
-                - Business
-                - Science
-                - Politics
-                - Environment
-                - Trading
-
-                IMPORTANT:
-                Return the tool's JSON output exactly as received.
-                Do not add explanations, markdown or extra text.
-                """
-            )
-        ]
-    })
-    news = news_result["messages"][-1].content
-    print("Latest 24 hrs news is : ",news)
-    return news
     
 
 def run_research_pipeline(topic : str) -> dict:

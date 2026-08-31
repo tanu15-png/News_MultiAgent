@@ -1,1332 +1,672 @@
 import streamlit as st
-import json
-import re
-import html
+import time
+from agents import build_reader_agent, build_search_agent, writer_chain, critic_chain
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from textwrap import dedent
-
-from pipeline import run_research_pipeline, hrs24_news
-
-
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
+# ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ResearchMind",
-    page_icon="✦",
+    page_title="ResearchMind · AI Research Agent",
+    page_icon="🔬",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-
-# ============================================================
-# CONSTANTS
-# ============================================================
-
-IST = ZoneInfo("Asia/Kolkata")
-
-
-# ============================================================
-# HTML HELPER
-# ============================================================
-
-def render_html(content: str):
-    """
-    Render custom HTML using Streamlit's HTML renderer.
-
-    st.html() is used instead of st.markdown() so that
-    HTML is rendered as HTML rather than displayed as code.
-    """
-    st.html(dedent(content))
-
-
-# ============================================================
-# TIME
-# ============================================================
-
-def get_current_ist():
-    """Return current date/time in IST."""
-    return datetime.now(IST)
-
-
-def get_noon_today():
-    """Return today's 12:00 PM IST."""
-    now = get_current_ist()
-
-    return now.replace(
-        hour=12,
-        minute=0,
-        second=0,
-        microsecond=0,
-    )
-
-
-# ============================================================
-# NEWS PARSER
-# ============================================================
-
-def parse_news(raw_news):
-    """
-    Convert the response returned by hrs24_news()
-    into a Python list.
-
-    Expected format:
-
-    [
-        {
-            "title": "...",
-            "url": "...",
-            "source": "...",
-            "category": "...",
-            "summary": "..."
-        }
-    ]
-    """
-
-    if raw_news is None:
-        return []
-
-    # Already parsed
-    if isinstance(raw_news, list):
-        return raw_news
-
-    # Dictionary response
-    if isinstance(raw_news, dict):
-
-        if isinstance(raw_news.get("news"), list):
-            return raw_news["news"]
-
-        if isinstance(raw_news.get("results"), list):
-            return raw_news["results"]
-
-        return []
-
-    text = str(raw_news).strip()
-
-    if not text:
-        return []
-
-    # Remove markdown JSON fences
-    text = re.sub(
-        r"^```json\s*",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    text = re.sub(
-        r"^```\s*",
-        "",
-        text,
-    )
-
-    text = re.sub(
-        r"\s*```$",
-        "",
-        text,
-    )
-
-    text = text.strip()
-
-    # Try normal JSON
-    try:
-
-        data = json.loads(text)
-
-        if isinstance(data, list):
-            return data
-
-        if isinstance(data, dict):
-
-            if isinstance(data.get("news"), list):
-                return data["news"]
-
-            if isinstance(data.get("results"), list):
-                return data["results"]
-
-    except json.JSONDecodeError:
-        pass
-
-    # Sometimes the model adds text before/after JSON.
-    # Try to extract the JSON array.
-    start = text.find("[")
-    end = text.rfind("]")
-
-    if start != -1 and end != -1 and end > start:
-
-        possible_json = text[start:end + 1]
-
-        try:
-
-            data = json.loads(possible_json)
-
-            if isinstance(data, list):
-                return data
-
-        except json.JSONDecodeError:
-            pass
-
-    return []
-
-
-# ============================================================
-# DAILY NEWS FETCH
-# ============================================================
-
-@st.cache_data(
-    show_spinner=False,
-    max_entries=10,
-)
-def fetch_news_for_day(edition_date):
-    """
-    Fetch news once for a particular date.
-
-    The date is part of the cache key.
-
-    Therefore:
-
-    September 1 -> one Tavily request
-    September 2 -> new Tavily request
-
-    The same day's result is reused from cache.
-    """
-
-    raw_news = hrs24_news()
-
-    return parse_news(raw_news)
-
-
-# ============================================================
-# NEWS LOGIC
-# ============================================================
-
-def get_today_news():
-    """
-    Return today's news only when the time is 12 PM or later.
-
-    BEFORE 12 PM:
-        No API call.
-
-    AFTER 12 PM:
-        Call hrs24_news() once.
-        Result is cached for the day.
-    """
-
-    now = get_current_ist()
-    noon = get_noon_today()
-
-    # --------------------------------------------------------
-    # BEFORE 12 PM
-    # --------------------------------------------------------
-
-    if now < noon:
-
-        return None
-
-    # --------------------------------------------------------
-    # 12 PM OR AFTER
-    # --------------------------------------------------------
-
-    today = now.date()
-
-    return fetch_news_for_day(str(today))
-
-
-# ============================================================
-# CUSTOM CSS
-# ============================================================
-
-render_html(
-    """
-    <style>
-
-        /* ====================================================
-           FONTS
-           ==================================================== */
-
-        @import url(
-            'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap'
-        );
-
-
-        /* ====================================================
-           PAGE
-           ==================================================== */
-
-        .researchmind-page {
-            font-family: 'DM Sans', sans-serif;
-            color: #0d0d24;
-        }
-
-
-        .researchmind-page * {
-            box-sizing: border-box;
-        }
-
-
-        /* ====================================================
-           BRAND
-           ==================================================== */
-
-        .brand-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-
-            padding: 12px 0 22px;
-
-            border-bottom: 1px solid #eeeeF4;
-        }
-
-
-        .brand {
-            font-family: 'Manrope', sans-serif;
-
-            font-size: 25px;
-
-            font-weight: 800;
-
-            letter-spacing: -1.5px;
-
-            color: #0d0d24;
-        }
-
-
-        .brand-dot {
-            color: #7367f0;
-        }
-
-
-        .brand-tag {
-            padding: 10px 15px;
-
-            border-radius: 12px;
-
-            background: #f7f5ff;
-
-            color: #7367f0;
-
-            font-size: 12px;
-
-            font-weight: 700;
-
-            letter-spacing: 0.04em;
-        }
-
-
-        /* ====================================================
-           HERO
-           ==================================================== */
-
-        .hero {
-            padding: 85px 0 65px;
-        }
-
-
-        .hero-kicker {
-            color: #7367f0;
-
-            font-size: 12px;
-
-            font-weight: 800;
-
-            letter-spacing: 0.16em;
-
-            text-transform: uppercase;
-
-            margin-bottom: 18px;
-        }
-
-
-        .hero-title {
-            margin: 0;
-
-            max-width: 850px;
-
-            font-family: 'Manrope', sans-serif;
-
-            font-size: clamp(48px, 7vw, 82px);
-
-            line-height: 0.98;
-
-            font-weight: 800;
-
-            letter-spacing: -5px;
-
-            color: #0d0d24;
-        }
-
-
-        .hero-title-accent {
-            color: #f2a9c7;
-        }
-
-
-        .hero-description {
-            max-width: 650px;
-
-            margin-top: 25px;
-
-            color: #6e6c7c;
-
-            font-size: 17px;
-
-            line-height: 1.7;
-        }
-
-
-        /* ====================================================
-           SECTION
-           ==================================================== */
-
-        .section {
-            margin-top: 55px;
-        }
-
-
-        .section-kicker {
-            color: #7367f0;
-
-            font-size: 11px;
-
-            font-weight: 800;
-
-            letter-spacing: 0.16em;
-
-            text-transform: uppercase;
-
-            margin-bottom: 7px;
-        }
-
-
-        .section-title {
-            font-family: 'Manrope', sans-serif;
-
-            font-size: 32px;
-
-            font-weight: 800;
-
-            letter-spacing: -1.8px;
-
-            color: #0d0d24;
-        }
-
-
-        .section-description {
-            margin-top: 8px;
-
-            color: #777587;
-
-            font-size: 14px;
-
-            line-height: 1.6;
-        }
-
-
-        /* ====================================================
-           NEWS STATUS
-           ==================================================== */
-
-        .news-status {
-            display: inline-flex;
-
-            align-items: center;
-
-            gap: 8px;
-
-            margin-top: 20px;
-
-            padding: 8px 13px;
-
-            border: 1px solid #e9e7f1;
-
-            border-radius: 999px;
-
-            background: #faf9fd;
-
-            color: #6f6c7d;
-
-            font-size: 12px;
-
-            font-weight: 600;
-        }
-
-
-        .news-dot {
-            width: 7px;
-
-            height: 7px;
-
-            border-radius: 50%;
-
-            background: #7367f0;
-        }
-
-
-        /* ====================================================
-           NEWS CARD
-           ==================================================== */
-
-        .news-card {
-            padding: 22px;
-
-            margin-top: 12px;
-
-            border: 1px solid #e8e6ef;
-
-            border-radius: 18px;
-
-            background: #ffffff;
-
-            transition: all 0.2s ease;
-        }
-
-
-        .news-card:hover {
-            border-color: #d7d3e7;
-
-            box-shadow:
-                0 12px 35px
-                rgba(13, 13, 36, 0.06);
-        }
-
-
-        .news-category {
-            margin-bottom: 8px;
-
-            color: #7367f0;
-
-            font-size: 10px;
-
-            font-weight: 800;
-
-            letter-spacing: 0.14em;
-
-            text-transform: uppercase;
-        }
-
-
-        .news-title {
-            font-family: 'Manrope', sans-serif;
-
-            color: #0d0d24;
-
-            font-size: 19px;
-
-            font-weight: 800;
-
-            line-height: 1.35;
-
-            letter-spacing: -0.5px;
-        }
-
-
-        .news-source {
-            margin-top: 8px;
-
-            color: #858293;
-
-            font-size: 12px;
-
-            font-weight: 600;
-        }
-
-
-        .news-summary {
-            margin-top: 16px;
-
-            color: #5f5d6d;
-
-            font-size: 14px;
-
-            line-height: 1.7;
-        }
-
-
-        .news-link {
-            display: inline-block;
-
-            margin-top: 18px;
-
-            color: #7367f0;
-
-            font-size: 13px;
-
-            font-weight: 700;
-
-            text-decoration: none;
-        }
-
-
-        /* ====================================================
-           NOON MESSAGE
-           ==================================================== */
-
-        .noon-card {
-            margin-top: 25px;
-
-            padding: 35px;
-
-            border: 1px solid #e8e6ef;
-
-            border-radius: 22px;
-
-            background: #faf9fd;
-
-            text-align: center;
-        }
-
-
-        .noon-icon {
-            font-size: 30px;
-
-            margin-bottom: 10px;
-        }
-
-
-        .noon-title {
-            font-family: 'Manrope', sans-serif;
-
-            font-size: 20px;
-
-            font-weight: 800;
-
-            color: #0d0d24;
-        }
-
-
-        .noon-description {
-            max-width: 570px;
-
-            margin: 10px auto 0;
-
-            color: #777587;
-
-            font-size: 14px;
-
-            line-height: 1.7;
-        }
-
-
-        /* ====================================================
-           RESEARCH RESULT
-           ==================================================== */
-
-        .result-header {
-            margin-top: 45px;
-
-            padding: 20px 0;
-
-            border-top: 1px solid #eeeeF4;
-        }
-
-
-        .result-label {
-            color: #7367f0;
-
-            font-size: 11px;
-
-            font-weight: 800;
-
-            letter-spacing: 0.16em;
-
-            text-transform: uppercase;
-        }
-
-
-        /* ====================================================
-           PIPELINE
-           ==================================================== */
-
-        .pipeline-card {
-            padding: 20px;
-
-            margin-top: 10px;
-
-            border: 1px solid #e8e6ef;
-
-            border-radius: 18px;
-
-            background: #ffffff;
-        }
-
-
-        .pipeline-number {
-            color: #7367f0;
-
-            font-size: 11px;
-
-            font-weight: 800;
-
-            letter-spacing: 0.12em;
-        }
-
-
-        .pipeline-name {
-            margin-top: 5px;
-
-            font-family: 'Manrope', sans-serif;
-
-            font-size: 17px;
-
-            font-weight: 800;
-
-            color: #0d0d24;
-        }
-
-
-        .pipeline-description {
-            margin-top: 5px;
-
-            color: #777587;
-
-            font-size: 13px;
-
-            line-height: 1.5;
-        }
-
-
-        /* ====================================================
-           FOOTER
-           ==================================================== */
-
-        .footer {
-            margin-top: 70px;
-
-            padding: 25px 0;
-
-            border-top: 1px solid #eeeeF4;
-
-            color: #9996a8;
-
-            text-align: center;
-
-            font-size: 12px;
-        }
-
-
-    </style>
-    """
-)
-
-
-# ============================================================
-# MAIN PAGE WRAPPER
-# ============================================================
-
-render_html(
-    """
-    <div class="researchmind-page">
-
-        <div class="brand-row">
-
-            <div class="brand">
-                Research<span class="brand-dot">Mind</span>
-            </div>
-
-            <div class="brand-tag">
-                AI-powered research intelligence
-            </div>
-
+# ── Custom CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+/* ── Reset & base ── */
+html, body, [class*="css"] {
+    font-family: 'DM Sans', sans-serif;
+    color: #111827;
+}
+
+.stApp {
+    background: #ffffff;
+}
+
+.block-container {
+    padding: 0 2.5rem 4rem;
+    max-width: 1400px;
+}
+
+/* ── Hide Streamlit chrome ── */
+#MainMenu, footer {
+    visibility: hidden;
+}
+
+header {
+    background: #ffffff !important;
+}
+
+/* ── Top navigation ── */
+.topbar {
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #e8ebf0;
+    margin: 0 -2.5rem 0;
+    padding: 0 2.5rem;
+}
+
+.brand {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #111827;
+}
+
+.brand-accent {
+    color: #4f46e5;
+}
+
+.ai-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.42rem 0.8rem;
+    border-radius: 999px;
+    background: #eef0ff;
+    color: #5961d9;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+/* ── Hero ── */
+.hero {
+    padding: 3.2rem 0 2.4rem;
+    border-bottom: 1px solid #e8ebf0;
+}
+
+.hero h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(3.2rem, 7vw, 6.4rem);
+    line-height: 0.96;
+    font-weight: 700;
+    letter-spacing: -0.065em;
+    color: #0d1528;
+    margin: 0;
+    max-width: 900px;
+}
+
+.hero h1 .accent {
+    color: #ed69ad;
+}
+
+.hero-sub {
+    margin: 1.25rem 0 0;
+    max-width: 650px;
+    color: #667085;
+    font-size: 1rem;
+    line-height: 1.65;
+}
+
+/* ── Section labels ── */
+.section-heading {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #101828;
+    letter-spacing: -0.025em;
+    margin: 0 0 1rem;
+}
+
+.section-kicker {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: #667085;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Main input area ── */
+.workspace {
+    padding-top: 2.4rem;
+}
+
+.input-card {
+    background: #f7f8fb;
+    border: 1px solid #e6e8ee;
+    border-radius: 18px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.input-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    color: #111827;
+    margin-bottom: 0.25rem;
+}
+
+.input-help {
+    color: #667085;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+}
+
+/* Streamlit text input */
+.stTextInput > div > div > input {
+    background: #ffffff !important;
+    border: 1px solid #d9dde6 !important;
+    border-radius: 11px !important;
+    color: #101828 !important;
+    -webkit-text-fill-color: #101828 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.98rem !important;
+    font-weight: 500 !important;
+    padding: 0.78rem 0.95rem !important;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03) !important;
+}
+
+.stTextInput > div > div > input::placeholder {
+    color: #98a2b3 !important;
+    -webkit-text-fill-color: #98a2b3 !important;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12) !important;
+}
+
+.stTextInput > label {
+    color: #344054 !important;
+    font-size: 0.76rem !important;
+    font-weight: 700 !important;
+}
+
+/* Run button */
+.stButton > button {
+    background: #111827 !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 11px !important;
+    min-height: 44px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    box-shadow: none !important;
+    transition: transform 0.15s ease, background 0.15s ease !important;
+}
+
+.stButton > button:hover {
+    background: #273142 !important;
+    transform: translateY(-1px) !important;
+}
+
+.stButton > button:active {
+    transform: translateY(0) !important;
+}
+
+/* ── Example topics ── */
+.example-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.example-label {
+    color: #98a2b3;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.example-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e3e6ec;
+    color: #667085;
+    border-radius: 999px;
+    padding: 0.38rem 0.7rem;
+    font-size: 0.73rem;
+    font-weight: 600;
+}
+
+/* ── Pipeline ── */
+.pipeline-wrap {
+    background: #ffffff;
+    border: 1px solid #e6e8ee;
+    border-radius: 18px;
+    padding: 1.35rem;
+}
+
+.step-card {
+    background: #ffffff;
+    border: 1px solid #e6e8ee;
+    border-radius: 13px;
+    padding: 1rem 1.05rem;
+    margin-bottom: 0.65rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.step-card.active {
+    border-color: #a5b4fc;
+    background: #f7f7ff;
+}
+
+.step-card.done {
+    border-color: #b8e0ca;
+    background: #f7fcf9;
+}
+
+.step-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #e6e8ee;
+}
+
+.step-card.active::before {
+    background: #6366f1;
+}
+
+.step-card.done::before {
+    background: #22a06b;
+}
+
+.step-header {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+}
+
+.step-num {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #667085;
+}
+
+.step-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #101828;
+}
+
+.step-status {
+    margin-left: auto;
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+}
+
+.status-waiting { color: #98a2b3; }
+.status-running { color: #5b61d6; }
+.status-done { color: #16855a; }
+
+/* ── Result panels ── */
+.results-divider {
+    height: 1px;
+    background: #e8ebf0;
+    margin: 2.7rem 0 2rem;
+}
+
+.result-panel,
+.report-panel,
+.feedback-panel {
+    background: #ffffff;
+    border: 1px solid #e2e6ed;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-top: 0.8rem;
+    margin-bottom: 1.1rem;
+    box-shadow: 0 2px 10px rgba(16, 24, 40, 0.025);
+}
+
+.result-panel-title,
+.panel-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #475467;
+    margin-bottom: 1rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid #edf0f4;
+}
+
+.panel-label.orange {
+    color: #c94f91;
+}
+
+.panel-label.green {
+    color: #16855a;
+}
+
+/*
+   IMPORTANT: generated content is deliberately dark and uses a strong,
+   block-style sans font so it remains readable on the white UI.
+*/
+.result-content,
+.report-panel,
+.feedback-panel {
+    color: #172033 !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+.result-content {
+    font-size: 0.92rem;
+    font-weight: 600;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Native markdown rendered by Streamlit */
+.report-panel > div:not(.panel-label),
+.feedback-panel > div:not(.panel-label) {
+    color: #172033 !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+.report-panel h1,
+.report-panel h2,
+.report-panel h3,
+.feedback-panel h1,
+.feedback-panel h2,
+.feedback-panel h3 {
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: #0d1528 !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.035em;
+}
+
+.report-panel p,
+.report-panel li,
+.report-panel blockquote,
+.feedback-panel p,
+.feedback-panel li,
+.feedback-panel blockquote {
+    color: #172033 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 600 !important;
+    line-height: 1.75 !important;
+}
+
+.report-panel strong,
+.feedback-panel strong {
+    color: #0d1528 !important;
+    font-weight: 800 !important;
+}
+
+.report-panel code,
+.feedback-panel code {
+    color: #26324a !important;
+    background: #f2f4f7 !important;
+}
+
+/* Expander */
+details summary {
+    color: #475467 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+}
+
+details summary:hover {
+    color: #4f46e5 !important;
+}
+
+/* Download button */
+.stDownloadButton > button {
+    background: #ffffff !important;
+    color: #344054 !important;
+    border: 1px solid #d9dde6 !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+}
+
+.stDownloadButton > button:hover {
+    border-color: #98a2b3 !important;
+    color: #111827 !important;
+}
+
+/* Alerts / spinner */
+.stSpinner > div {
+    color: #4f46e5 !important;
+}
+
+[data-testid="stAlert"] {
+    border-radius: 11px;
+}
+
+/* Footer */
+.notice {
+    color: #98a2b3;
+    text-align: center;
+    margin-top: 3rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── Helper: render a step card ────────────────────────────────────────────────
+def step_card(num: str, title: str, state: str, desc: str = ""):
+    status_map = {
+        "waiting": ("WAITING", "status-waiting"),
+        "running": ("● RUNNING", "status-running"),
+        "done":    ("✓ DONE",   "status-done"),
+    }
+    label, cls = status_map.get(state, ("", ""))
+    card_cls = {"running": "active", "done": "done"}.get(state, "")
+    st.markdown(f"""
+    <div class="step-card {card_cls}">
+        <div class="step-header">
+            <span class="step-num">{num}</span>
+            <span class="step-title">{title}</span>
+            <span class="step-status {cls}">{label}</span>
         </div>
-
-
-        <section class="hero">
-
-            <div class="hero-kicker">
-                Research intelligence
-            </div>
-
-            <h1 class="hero-title">
-
-                Know what changed.<br>
-
-                <span class="hero-title-accent">
-                    Understand why it matters.
-                </span>
-
-            </h1>
-
-            <div class="hero-description">
-
-                ResearchMind combines live web information
-                with specialized AI agents to discover,
-                read, write, and critique research for you.
-
-            </div>
-
-        </section>
-
+        {"<div style='font-size:0.82rem;color:#706860;margin-top:0.3rem;'>"+desc+"</div>" if desc else ""}
     </div>
-    """
-)
+    """, unsafe_allow_html=True)
 
 
-# ============================================================
-# LATEST NEWS SECTION
-# ============================================================
-
-render_html(
-    """
-    <div class="section">
-
-        <div class="section-kicker">
-            Latest intelligence
-        </div>
-
-        <div class="section-title">
-            What changed recently?
-        </div>
-
-        <div class="section-description">
-
-            Fresh news from different categories,
-            updated once every day at 12:00 PM IST.
-
-        </div>
-
-    </div>
-    """
-)
+# ── Session state init ────────────────────────────────────────────────────────
+for key in ("results", "running", "done"):
+    if key not in st.session_state:
+        st.session_state[key] = {} if key == "results" else False
 
 
-# ============================================================
-# NEWS SECTION
-#
-# st.fragment checks every minute.
-#
-# This means:
-#
-# Before 12 PM:
-#     No API call.
-#
-# At/after 12 PM:
-#     Today's news is fetched.
-#
-# cache_data prevents repeated Tavily calls.
-# ============================================================
+# ── Header / Hero ─────────────────────────────────────────────────────────────
+st.markdown("""
 
-@st.fragment(run_every="60s")
-def display_daily_news():
+<div class="hero">
+    <h1>
+        Know what changed.<br>
+        <span class="accent">Understand why it matters.</span>
+    </h1>
+    <p class="hero-sub">
+        Four specialized AI agents search, read, write, and critique
+        to turn a topic into a clear, research-backed report.
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
-    now = get_current_ist()
-    noon = get_noon_today()
 
-    # --------------------------------------------------------
-    # BEFORE NOON
-    # --------------------------------------------------------
+# ── Layout: input left, pipeline right ───────────────────────────────────────
+col_input, col_spacer, col_pipeline = st.columns([5.2, 0.5, 4])
 
-    if now < noon:
-
-        remaining = noon - now
-
-        seconds = max(
-            0,
-            int(
-                remaining.total_seconds()
-            ),
-        )
-
-        hours = seconds // 3600
-
-        minutes = (
-            seconds % 3600
-        ) // 60
-
-        render_html(
-            f"""
-            <div class="noon-card">
-
-                <div class="noon-icon">
-                    ◷
-                </div>
-
-                <div class="noon-title">
-                    Today's news edition isn't available yet.
-                </div>
-
-                <div class="noon-description">
-
-                    ResearchMind refreshes its news intelligence
-                    once daily at
-                    <strong>12:00 PM IST</strong>.
-
-                    <br><br>
-
-                    No Tavily request is made before
-                    the daily edition time.
-
-                    <br><br>
-
-                    Today's edition arrives in approximately
-
-                    <strong>
-                        {hours}h {minutes}m
-                    </strong>.
-
-                </div>
-
+with col_input:
+    st.markdown("""
+    <div class="workspace">
+        <div class="section-kicker">Research any topic</div>
+        <div class="input-card">
+            <div class="input-title">What do you want to understand?</div>
+            <div class="input-help">
+                Enter a topic and let the research pipeline gather,
+                analyze, write, and review the information for you.
             </div>
-            """
-        )
+    """, unsafe_allow_html=True)
 
-        return
-
-
-    # --------------------------------------------------------
-    # AFTER NOON
-    # --------------------------------------------------------
-
-    try:
-
-        news_items = get_today_news()
-
-    except Exception as error:
-
-        st.error(
-            "Unable to load today's news. "
-            f"Error: {error}"
-        )
-
-        return
-
-
-    # --------------------------------------------------------
-    # NO RESULTS
-    # --------------------------------------------------------
-
-    if not news_items:
-
-        st.warning(
-            "No news articles were returned by the news agent."
-        )
-
-        return
-
-
-    # --------------------------------------------------------
-    # STATUS
-    # --------------------------------------------------------
-
-    render_html(
-        """
-        <div class="news-status">
-
-            <span class="news-dot"></span>
-
-            Live Tavily intelligence ·
-            Today's edition ·
-            12:00 PM IST
-
-        </div>
-        """
+    topic = st.text_input(
+        "Research Topic",
+        placeholder="e.g. How AI agents are changing software development",
+        key="topic_input",
+        label_visibility="visible",
     )
+    run_btn = st.button("Run research →", use_container_width=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="example-row">
+        <span class="example-label">TRY</span>
+    """, unsafe_allow_html=True)
+
+    examples = ["LLM agents 2025", "CRISPR gene editing", "Fusion energy progress"]
+    for ex in examples:
+        st.markdown(f'<span class="example-chip">{ex}</span>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
-    # --------------------------------------------------------
-    # NEWS ARTICLES
-    # --------------------------------------------------------
+with col_pipeline:
+    st.markdown('<div class="workspace">', unsafe_allow_html=True)
+    st.markdown('<div class="section-kicker">How it works</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-heading">Four specialized stages</div>', unsafe_allow_html=True)
+    st.markdown('<div class="pipeline-wrap">', unsafe_allow_html=True)
 
-    for index, article in enumerate(news_items):
+    r = st.session_state.results
+    done = st.session_state.done
 
-        if not isinstance(article, dict):
-            continue
+    def s(step):
+        if not r:
+            return "waiting"
+        steps = ["search", "reader", "writer", "critic"]
+        idx = steps.index(step)
+        completed = list(r.keys())
+        if step in r:
+            return "done"
+        if st.session_state.running:
+            for i, k in enumerate(steps):
+                if k not in r:
+                    return "running" if k == step else "waiting"
+        return "waiting"
 
+    step_card("01", "Search Agent",  s("search"), "Gathers recent web information")
+    step_card("02", "Reader Agent",  s("reader"), "Scrapes & extracts deep content")
+    step_card("03", "Writer Chain",  s("writer"), "Drafts the full research report")
+    step_card("04", "Critic Chain",  s("critic"), "Reviews & scores the report")
 
-        title = str(
-            article.get(
-                "title",
-                "Untitled news",
-            )
-        )
-
-
-        source = str(
-            article.get(
-                "source",
-                "Unknown source",
-            )
-        )
-
-
-        category = str(
-            article.get(
-                "category",
-                "LATEST",
-            )
-        )
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
 
-        summary = str(
-            article.get(
-                "summary",
-                article.get(
-                    "snippet",
-                    article.get(
-                        "content",
-                        "No summary available.",
-                    ),
-                ),
-            )
-        )
-
-
-        url = str(
-            article.get(
-                "url",
-                "",
-            )
-        )
-
-
-        # ----------------------------------------------------
-        # HTML ESCAPING
-        # ----------------------------------------------------
-
-        safe_title = html.escape(title)
-
-        safe_source = html.escape(source)
-
-        safe_category = html.escape(category)
-
-        safe_summary = html.escape(summary)
-
-
-        # ----------------------------------------------------
-        # EXPANDABLE NEWS CARD
-        # ----------------------------------------------------
-
-        with st.expander(
-            f"{category.upper()}  ·  {title}",
-            expanded=False,
-        ):
-
-            render_html(
-                f"""
-                <div class="news-card">
-
-                    <div class="news-category">
-                        {safe_category}
-                    </div>
-
-                    <div class="news-title">
-                        {safe_title}
-                    </div>
-
-                    <div class="news-source">
-                        {safe_source}
-                    </div>
-
-                    <div class="news-summary">
-                        {safe_summary}
-                    </div>
-
-                </div>
-                """
-            )
-
-
-            if (
-                url.startswith("http://")
-                or url.startswith("https://")
-            ):
-
-                safe_url = html.escape(
-                    url,
-                    quote=True,
-                )
-
-                render_html(
-                    f"""
-                    <a
-                        class="news-link"
-                        href="{safe_url}"
-                        target="_blank"
-                    >
-                        Read original story →
-                    </a>
-                    """
-                )
-
-
-display_daily_news()
-
-
-# ============================================================
-# DEEP RESEARCH
-# ============================================================
-
-render_html(
-    """
-    <div class="section">
-
-        <div class="section-kicker">
-            Deep research
-        </div>
-
-        <div class="section-title">
-            Research any topic.
-        </div>
-
-        <div class="section-description">
-
-            Let specialized AI agents search, read,
-            write, and critique a research report.
-
-        </div>
-
-    </div>
-    """
-)
-
-
-# ============================================================
-# TOPIC INPUT
-# ============================================================
-
-topic = st.text_input(
-    "Research topic",
-    placeholder="e.g. AI agents in software development",
-    label_visibility="collapsed",
-)
-
-
-# ============================================================
-# RUN RESEARCH
-# ============================================================
-
-run_research = st.button(
-    "✦  Run Research Pipeline",
-    use_container_width=True,
-)
-
-
-if run_research:
-
+# ── Run pipeline ──────────────────────────────────────────────────────────────
+if run_btn:
     if not topic.strip():
-
-        st.warning(
-            "Please enter a research topic first."
-        )
-
+        st.warning("Please enter a research topic first.")
     else:
+        st.session_state.results = {}
+        st.session_state.running = True
+        st.session_state.done = False
+        st.rerun()
 
-        try:
+if st.session_state.running and not st.session_state.done:
+    results = {}
+    topic_val = st.session_state.topic_input
 
-            with st.spinner(
-                "ResearchMind is researching..."
-            ):
+    # ── Step 1: Search ──
+    with st.spinner("  Search Agent is working…"):
+        search_agent = build_search_agent()
+        sr = search_agent.invoke({
+            "messages": [("user", f"Find recent, reliable and detailed information about: {topic_val}")]
+        })
+        results["search"] = sr["messages"][-1].content
+        st.session_state.results = dict(results)
+    st.rerun() if False else None   # keep inline for now
 
-                result = run_research_pipeline(
-                    topic.strip()
-                )
+    # ── Step 2: Reader ──
+    with st.spinner("  Reader Agent is scraping top resources…"):
+        reader_agent = build_reader_agent()
+        rr = reader_agent.invoke({
+            "messages": [("user",
+                f"Based on the following search results about '{topic_val}', "
+                f"pick the most relevant URL and scrape it for deeper content.\n\n"
+                f"Search Results:\n{results['search'][:800]}"
+            )]
+        })
+        results["reader"] = rr["messages"][-1].content
+        st.session_state.results = dict(results)
 
-
-            st.session_state["research_result"] = result
-
-
-        except Exception as error:
-
-            st.error(
-                f"Research pipeline failed: {error}"
-            )
-
-
-# ============================================================
-# DISPLAY RESEARCH RESULT
-# ============================================================
-
-if "research_result" in st.session_state:
-
-    result = st.session_state["research_result"]
-
-
-    render_html(
-        """
-        <div class="result-header">
-
-            <div class="result-label">
-                Research output
-            </div>
-
-        </div>
-        """
-    )
-
-
-    # --------------------------------------------------------
-    # SEARCH RESULTS
-    # --------------------------------------------------------
-
-    if result.get("search_results"):
-
-        with st.expander(
-            "🔎  View raw search results",
-            expanded=False,
-        ):
-
-            st.write(
-                result["search_results"]
-            )
-
-
-    # --------------------------------------------------------
-    # SCRAPED CONTENT
-    # --------------------------------------------------------
-
-    if result.get("scraped_content"):
-
-        with st.expander(
-            "📄  View scraped source content",
-            expanded=False,
-        ):
-
-            st.write(
-                result["scraped_content"]
-            )
-
-
-    # --------------------------------------------------------
-    # FINAL REPORT
-    # --------------------------------------------------------
-
-    if result.get("report"):
-
-        render_html(
-            """
-            <div class="result-header">
-
-                <div class="result-label">
-                    Final research report
-                </div>
-
-            </div>
-            """
+    # ── Step 3: Writer ──
+    with st.spinner("  Writer is drafting the report…"):
+        research_combined = (
+            f"SEARCH RESULTS:\n{results['search']}\n\n"
+            f"DETAILED SCRAPED CONTENT:\n{results['reader']}"
         )
+        results["writer"] = writer_chain.invoke({
+            "topic": topic_val,
+            "research": research_combined
+        })
+        st.session_state.results = dict(results)
+
+    # ── Step 4: Critic ──
+    with st.spinner("  Critic is reviewing the report…"):
+        results["critic"] = critic_chain.invoke({
+            "report": results["writer"]
+        })
+        st.session_state.results = dict(results)
+
+    st.session_state.running = False
+    st.session_state.done = True
+    st.rerun()
 
 
-        st.markdown(
-            result["report"]
-        )
+# ── Results display ───────────────────────────────────────────────────────────
+r = st.session_state.results
+
+if r:
+    st.markdown('<div class="results-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-heading">Results</div>', unsafe_allow_html=True)
 
 
+    # Final report
+    if "writer" in r:
+        st.markdown("""
+        <div class="report-panel">
+            <div class="panel-label orange">Final Research Report</div>
+        """, unsafe_allow_html=True)
+        st.markdown(r["writer"])   # render markdown natively
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Download
         st.download_button(
-            "↓  Download research report",
-            data=result["report"],
-            file_name="research_report.md",
+            label="⬇  Download Report (.md)",
+            data=r["writer"],
+            file_name=f"research_report_{int(time.time())}.md",
             mime="text/markdown",
         )
 
-
-    # --------------------------------------------------------
-    # CRITIC
-    # --------------------------------------------------------
-
-    if result.get("feedback"):
-
-        render_html(
-            """
-            <div class="result-header">
-
-                <div class="result-label">
-                    Critic review
-                </div>
-
-            </div>
-            """
-        )
+    # Critic feedback
+    if "critic" in r:
+        st.markdown("""
+        <div class="feedback-panel">
+            <div class="panel-label green">Critic Feedback</div>
+        """, unsafe_allow_html=True)
+        st.markdown(r["critic"])
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
-        st.markdown(
-            result["feedback"]
-        )
-
-
-# ============================================================
-# HOW IT WORKS
-# ============================================================
-
-render_html(
-    """
-    <div class="section">
-
-        <div class="section-kicker">
-            How it works
-        </div>
-
-        <div class="section-title">
-            Four specialized stages.
-        </div>
-
-    </div>
-    """
-)
-
-
-pipeline_steps = [
-    (
-        "01",
-        "Search Agent",
-        "Finds recent and relevant information from the web using Tavily.",
-    ),
-    (
-        "02",
-        "Reader Agent",
-        "Selects relevant sources and extracts deeper webpage content.",
-    ),
-    (
-        "03",
-        "Writer Chain",
-        "Turns gathered research into a structured research report.",
-    ),
-    (
-        "04",
-        "Critic Chain",
-        "Reviews the report and identifies strengths and improvements.",
-    ),
-]
-
-
-for number, name, description in pipeline_steps:
-
-    render_html(
-        f"""
-        <div class="pipeline-card">
-
-            <div class="pipeline-number">
-                {number}
-            </div>
-
-            <div class="pipeline-name">
-                {html.escape(name)}
-            </div>
-
-            <div class="pipeline-description">
-                {html.escape(description)}
-            </div>
-
-        </div>
-        """
-    )
-
-
-# ============================================================
-# FOOTER
-# ============================================================
-
-render_html(
-    """
-    <div class="footer">
-
-        ResearchMind · AI-powered multi-agent research
-
-        <br>
-
-        Built with Streamlit · LangChain · Mistral AI · Tavily
-
-    </div>
-    """
-)
+# ── Footer ────────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="notice">
+    ResearchMind · Powered by LangChain multi-agent pipeline · Built with Streamlit
+</div>
+""", unsafe_allow_html=True)

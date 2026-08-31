@@ -2,7 +2,7 @@ from langchain.agents import create_agent
 from langchain_mistralai import ChatMistralAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from tools import web_search , scrape_url , latest_news
+from tools import web_search , scrape_url 
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,11 +26,6 @@ def build_reader_agent():
         tools = [scrape_url]
     )
 
-def get_latest_news():
-    return create_agent(
-        model = llm,
-        tools = [latest_news]
-    )
 
 #writer chain 
 
