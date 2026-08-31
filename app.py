@@ -1,400 +1,384 @@
 import streamlit as st
 import time
-from agents import build_reader_agent, build_search_agent, writer_chain, critic_chain
+from pipeline import run_research_pipeline
 
-# ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ResearchMind · AI Research Agent",
-    page_icon="🔬",
+    page_title="ResearchMind · AI Research Assistant",
+    page_icon="✦",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+# Demo homepage news. Refresh cycles through different sets.
+# These are intentionally demo stories and do not call an API.
+DEMO_NEWS = [
+    [
+        {
+            "category": "AI & TECHNOLOGY",
+            "title": "AI agents are moving from chat to real-world workflows",
+            "source": "ResearchMind Demo",
+            "time": "2 hours ago",
+            "summary": "AI systems are increasingly being designed to plan tasks, use tools, gather information, and complete multi-step workflows instead of only generating text.",
+            "details": "This demo story represents the kind of development ResearchMind could surface in its 24-hour discovery feed. The interesting shift is from single-prompt assistants toward systems that can search, reason, use external tools, and coordinate multiple stages of work.",
+        },
+        {
+            "category": "SCIENCE",
+            "title": "New advances make scientific research more AI-assisted",
+            "source": "ResearchMind Demo",
+            "time": "4 hours ago",
+            "summary": "Researchers are experimenting with AI systems that help discover patterns, summarize literature, and accelerate parts of scientific investigation.",
+            "details": "AI-assisted science is becoming a broader workflow rather than a single tool. Systems can help researchers navigate large collections of papers, compare findings, identify promising directions, and prepare early research summaries.",
+        },
+        {
+            "category": "BUSINESS",
+            "title": "Companies rethink how knowledge workers use AI",
+            "source": "ResearchMind Demo",
+            "time": "6 hours ago",
+            "summary": "Organizations are moving beyond generic chatbots and exploring AI workflows tailored to specific business tasks.",
+            "details": "The demo story highlights a broader product trend: instead of asking employees to use a general chatbot for everything, companies are building AI into research, support, analysis, documentation, and operational workflows.",
+        },
+        {
+            "category": "TECHNOLOGY",
+            "title": "Smaller AI models are becoming more useful for everyday applications",
+            "source": "ResearchMind Demo",
+            "time": "8 hours ago",
+            "summary": "Developers are increasingly evaluating smaller models for applications where speed, cost, and deployment flexibility matter.",
+            "details": "Smaller models can be attractive when an application needs fast responses or lower inference costs. This creates more options for developers choosing between large general-purpose models and focused models for specific tasks.",
+        },
+        {
+            "category": "STARTUPS",
+            "title": "AI-native products focus on complete workflows, not features",
+            "source": "ResearchMind Demo",
+            "time": "10 hours ago",
+            "summary": "A growing number of AI products are being designed around complete user journeys rather than adding AI as an isolated feature.",
+            "details": "The demo reflects a product-design trend where AI is embedded across a workflow: collecting information, making decisions, producing an output, and helping the user take the next action.",
+        },
+        {
+            "category": "FUTURE",
+            "title": "The next generation of AI interfaces may feel less like chat",
+            "source": "ResearchMind Demo",
+            "time": "12 hours ago",
+            "summary": "New AI products are exploring interfaces that combine search, cards, actions, documents, and autonomous workflows.",
+            "details": "Rather than placing every interaction inside a chat window, designers are experimenting with interfaces where AI results appear as structured information and actions. ResearchMind follows this direction with a news discovery layer and a deeper research pipeline.",
+        },
+    ],
+    [
+        {
+            "category": "AI & TECHNOLOGY",
+            "title": "Multi-agent systems gain attention for complex research tasks",
+            "source": "ResearchMind Demo",
+            "time": "1 hour ago",
+            "summary": "Developers are experimenting with specialized AI agents that divide complex tasks into research, analysis, writing, and review stages.",
+            "details": "The demo story represents a key idea behind ResearchMind: specialized components can be easier to reason about than one large prompt handling every part of a research workflow.",
+        },
+        {
+            "category": "SCIENCE",
+            "title": "AI helps researchers navigate rapidly growing literature",
+            "source": "ResearchMind Demo",
+            "time": "3 hours ago",
+            "summary": "As scientific literature grows, AI-assisted discovery tools are being explored to help researchers find relevant work faster.",
+            "details": "Research discovery is especially suitable for AI because researchers often need to search across many documents before identifying the few sources worth reading deeply.",
+        },
+        {
+            "category": "PRODUCT",
+            "title": "AI interfaces are becoming more visual and task-oriented",
+            "source": "ResearchMind Demo",
+            "time": "5 hours ago",
+            "summary": "Modern AI applications increasingly combine structured cards, actions, summaries, and conversational interactions.",
+            "details": "This demo story mirrors the design direction of ResearchMind: give users useful information immediately, then provide a clear path from discovery to deeper investigation.",
+        },
+        {
+            "category": "DEVELOPMENT",
+            "title": "Developers adopt tool-using AI for automated workflows",
+            "source": "ResearchMind Demo",
+            "time": "7 hours ago",
+            "summary": "Tool calling allows AI systems to interact with search, databases, APIs, and other external services.",
+            "details": "A tool-using model can decide when external information is needed and then incorporate the returned information into its next step. ResearchMind uses this pattern for web research and webpage extraction.",
+        },
+        {
+            "category": "STARTUPS",
+            "title": "AI startups compete on workflow reliability and usefulness",
+            "source": "ResearchMind Demo",
+            "time": "9 hours ago",
+            "summary": "As AI capabilities become more accessible, product differentiation increasingly depends on solving specific user problems well.",
+            "details": "The demo story emphasizes an important product lesson: the value of an AI application comes from the workflow it enables, not simply from having an LLM behind the interface.",
+        },
+        {
+            "category": "FUTURE",
+            "title": "Human-in-the-loop AI remains important for high-value decisions",
+            "source": "ResearchMind Demo",
+            "time": "11 hours ago",
+            "summary": "AI systems can accelerate information gathering while humans remain responsible for judging important conclusions.",
+            "details": "ResearchMind follows this principle by showing the generated report and critic feedback rather than treating an AI response as unquestionable truth.",
+        },
+    ],
+]
 
-/* ── Reset & base ── */
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    color: #e8e4dc;
-}
+if "news_set" not in st.session_state:
+    st.session_state.news_set = 0
+if "results" not in st.session_state:
+    st.session_state.results = {}
+if "running" not in st.session_state:
+    st.session_state.running = False
+if "done" not in st.session_state:
+    st.session_state.done = False
 
-.stApp {
-    background: #0a0a0f;
-    background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(255,140,50,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(255,80,30,0.08) 0%, transparent 55%);
-}
+st.markdown(
+    '''
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
 
-/* ── Hide default streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 2rem 3rem 4rem; max-width: 1200px; }
-
-/* ── Hero header ── */
-.hero {
-    text-align: center;
-    padding: 3.5rem 0 2.5rem;
-    position: relative;
-}
-.hero-eyebrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    font-weight: 500;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: #ff8c32;
-    margin-bottom: 1rem;
-    opacity: 0.9;
-}
-.hero h1 {
-    font-family: 'Syne', sans-serif;
-    font-size: clamp(2.8rem, 6vw, 5rem);
-    font-weight: 800;
-    line-height: 1.0;
-    letter-spacing: -0.03em;
-    color: #f0ebe0;
-    margin: 0 0 1rem;
-}
-.hero h1 span {
-    color: #ff8c32;
-}
-.hero-sub {
-    font-size: 1.05rem;
-    font-weight: 300;
-    color: #a09890;
-    max-width: 520px;
-    margin: 0 auto;
-    line-height: 1.65;
-}
-
-/* ── Divider ── */
-.divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,140,50,0.3), transparent);
-    margin: 2rem 0;
-}
-
-/* ── Input card ── */
-.input-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,140,50,0.15);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-bottom: 2rem;
-    backdrop-filter: blur(8px);
-}
-
-/* ── Streamlit input overrides ── */
-.stTextInput > div > div > input {
-    background: rgba(255,255,255,0.05) !important;
-    border: 1px solid rgba(255,140,50,0.25) !important;
-    border-radius: 10px !important;
-    color: #f0ebe0 !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 1rem !important;
-    padding: 0.75rem 1rem !important;
-    transition: border-color 0.2s, box-shadow 0.2s !important;
-}
-.stTextInput > div > div > input:focus {
-    border-color: #ff8c32 !important;
-    box-shadow: 0 0 0 3px rgba(255,140,50,0.12) !important;
-}
-.stTextInput > label {
-    font-family: 'DM Mono', monospace !important;
-    font-size: 0.72rem !important;
-    letter-spacing: 0.15em !important;
-    text-transform: uppercase !important;
-    color: #ff8c32 !important;
-    font-weight: 500 !important;
-}
-
-/* ── Button ── */
-.stButton > button {
-    background: linear-gradient(135deg, #ff8c32 0%, #ff5a1a 100%) !important;
-    color: #0a0a0f !important;
-    font-family: 'Syne', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 0.95rem !important;
-    letter-spacing: 0.04em !important;
-    border: none !important;
-    border-radius: 10px !important;
-    padding: 0.7rem 2.2rem !important;
-    cursor: pointer !important;
-    transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s !important;
-    box-shadow: 0 4px 20px rgba(255,140,50,0.3) !important;
-    width: 100%;
-}
-.stButton > button:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 28px rgba(255,140,50,0.4) !important;
-    opacity: 0.95 !important;
-}
-.stButton > button:active {
-    transform: translateY(0) !important;
-}
-
-/* ── Pipeline step cards ── */
-.step-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 1.5rem 1.8rem;
-    margin-bottom: 1.2rem;
-    position: relative;
-    overflow: hidden;
-    transition: border-color 0.3s;
-}
-.step-card.active {
-    border-color: rgba(255,140,50,0.4);
-    background: rgba(255,140,50,0.04);
-}
-.step-card.done {
-    border-color: rgba(80,200,120,0.3);
-    background: rgba(80,200,120,0.03);
-}
-.step-card::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    border-radius: 14px 0 0 14px;
-    background: rgba(255,255,255,0.05);
-    transition: background 0.3s;
-}
-.step-card.active::before { background: #ff8c32; }
-.step-card.done::before   { background: #50c878; }
-
-.step-header {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    margin-bottom: 0.3rem;
-}
-.step-num {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.68rem;
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    color: #ff8c32;
-    opacity: 0.7;
-}
-.step-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: #f0ebe0;
-}
-.step-status {
-    margin-left: auto;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-}
-.status-waiting  { color: #555; }
-.status-running  { color: #ff8c32; }
-.status-done     { color: #50c878; }
-
-/* ── Result panels ── */
-.result-panel {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 1.8rem 2rem;
-    margin-top: 1rem;
-    margin-bottom: 1.5rem;
-}
-.result-panel-title {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    font-weight: 500;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: #ff8c32;
-    margin-bottom: 1rem;
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid rgba(255,140,50,0.15);
-}
-.result-content {
-    font-size: 0.92rem;
-    line-height: 1.8;
-    color: #cdc8bf;
-    white-space: pre-wrap;
-    font-family: 'DM Sans', sans-serif;
-}
-
-/* ── Report & feedback panels ── */
-.report-panel {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,140,50,0.2);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-top: 1rem;
-}
-.feedback-panel {
-    background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(80,200,120,0.2);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-top: 1rem;
-}
-.panel-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin-bottom: 1.2rem;
-    padding-bottom: 0.7rem;
-}
-.panel-label.orange {
-    color: #ff8c32;
-    border-bottom: 1px solid rgba(255,140,50,0.15);
-}
-.panel-label.green {
-    color: #50c878;
-    border-bottom: 1px solid rgba(80,200,120,0.15);
-}
-
-/* ── Progress text ── */
-.stSpinner > div { color: #ff8c32 !important; }
-
-/* ── Expander ── */
-details summary {
-    font-family: 'DM Mono', monospace !important;
-    font-size: 0.75rem !important;
-    color: #a09890 !important;
-    letter-spacing: 0.1em !important;
-    cursor: pointer;
-}
-
-/* ── Section heading ── */
-.section-heading {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: #f0ebe0;
-    margin: 2rem 0 1rem;
-}
-
-/* ── Toast-style notice ── */
-.notice {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.72rem;
-    color: #605850;
-    text-align: center;
-    margin-top: 3rem;
-    letter-spacing: 0.08em;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ── Helper: render a step card ────────────────────────────────────────────────
-def step_card(num: str, title: str, state: str, desc: str = ""):
-    status_map = {
-        "waiting": ("WAITING", "status-waiting"),
-        "running": ("● RUNNING", "status-running"),
-        "done":    ("✓ DONE",   "status-done"),
+    :root {
+        --ink:#0d0d24; --muted:#77758a; --soft:#f7f7fb;
+        --line:#e9e8f0; --purple:#7367f0; --pink:#f5a9c5;
+        --pink-soft:#fff0f6; --white:#fff;
     }
-    label, cls = status_map.get(state, ("", ""))
-    card_cls = {"running": "active", "done": "done"}.get(state, "")
-    st.markdown(f"""
-    <div class="step-card {card_cls}">
-        <div class="step-header">
-            <span class="step-num">{num}</span>
-            <span class="step-title">{title}</span>
-            <span class="step-status {cls}">{label}</span>
-        </div>
-        {"<div style='font-size:0.82rem;color:#706860;margin-top:0.3rem;'>"+desc+"</div>" if desc else ""}
+    html,body,[class*="css"] { font-family:'DM Sans',sans-serif; color:var(--ink); }
+    .stApp { background:#fff; }
+    #MainMenu,footer,header { visibility:hidden; }
+    .block-container { max-width:1240px; padding:1.2rem 2.5rem 4rem; }
+
+    .nav { display:flex; align-items:center; gap:3rem; min-height:62px;
+           border-bottom:1px solid #f1f0f5; margin-bottom:2.5rem; }
+    .brand { font-family:'Manrope',sans-serif; font-size:1.45rem; font-weight:800;
+             letter-spacing:-.07em; color:var(--ink); margin-right:1.5rem; }
+    .nav-item { font-size:.92rem; font-weight:600; color:var(--ink); }
+    .nav-item span { color:#7d7a8b; font-size:.75rem; margin-left:.25rem; }
+    .nav-note { margin-left:auto; color:#77758a; font-size:.82rem; }
+
+    .hero { padding:2.2rem 0 1.2rem; }
+    .eyebrow { display:inline-flex; padding:.5rem .85rem; border-radius:999px;
+               background:var(--pink-soft); color:#e66c9b; font-size:.73rem;
+               font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:1.25rem; }
+    .hero h1 { font-family:'Manrope',sans-serif; font-size:clamp(3rem,6vw,5.7rem);
+               line-height:.98; letter-spacing:-.075em; font-weight:800; max-width:930px;
+               margin:0; color:var(--ink); }
+    .hero h1 .accent { color:var(--pink); }
+    .hero p { color:var(--muted); max-width:650px; font-size:1.05rem; line-height:1.7; margin-top:1.4rem; }
+
+    .section-top { display:flex; align-items:flex-end; justify-content:space-between; margin:3rem 0 1.2rem; }
+    .section-kicker { color:var(--purple); font-size:.72rem; font-weight:800;
+                      letter-spacing:.12em; text-transform:uppercase; margin-bottom:.35rem; }
+    .section-title { font-family:'Manrope',sans-serif; font-size:2rem; line-height:1.1;
+                     letter-spacing:-.05em; font-weight:800; color:var(--ink); }
+    .section-description { color:var(--muted); font-size:.9rem; margin-top:.4rem; }
+
+    .stButton > button { border-radius:999px!important; border:1px solid var(--line)!important;
+                         background:#fff!important; color:var(--ink)!important;
+                         font-family:'DM Sans',sans-serif!important; font-weight:700!important;
+                         padding:.65rem 1.2rem!important; min-height:42px!important; }
+    .stButton > button:hover { border-color:#c8c4dc!important; background:#faf9fd!important; transform:translateY(-1px); }
+
+    div[data-testid="stExpander"] { border:1px solid var(--line)!important; border-radius:20px!important;
+        background:#fff!important; box-shadow:0 8px 30px rgba(21,19,45,.035)!important;
+        margin-bottom:.85rem!important; overflow:hidden!important; }
+    div[data-testid="stExpander"] summary { padding:.1rem!important; }
+    div[data-testid="stExpander"] summary p { font-family:'Manrope',sans-serif!important;
+        font-weight:800!important; color:var(--ink)!important; font-size:.92rem!important; }
+
+    .news-category { display:inline-block; color:#e66c9b; background:var(--pink-soft);
+                     border-radius:999px; padding:.3rem .55rem; font-size:.63rem;
+                     font-weight:800; letter-spacing:.07em; }
+    .news-title { font-family:'Manrope',sans-serif; color:var(--ink); font-size:1.08rem;
+                  line-height:1.3; letter-spacing:-.025em; font-weight:800; margin:.8rem 0 .55rem; }
+    .news-summary { color:var(--muted); font-size:.82rem; line-height:1.55; margin-bottom:1rem; }
+    .news-meta { color:#9996a5; font-size:.7rem; font-weight:600; }
+
+    .research-box { background:var(--soft); border-radius:28px; padding:2rem;
+                    border:1px solid #efedf5; margin-top:2rem; }
+    .research-heading { font-family:'Manrope',sans-serif; font-size:2.25rem; font-weight:800;
+                        letter-spacing:-.055em; color:var(--ink); margin-bottom:.35rem; }
+    .research-sub { color:var(--muted); font-size:.9rem; margin-bottom:1.4rem; }
+    .stTextInput > div > div > input { border:1px solid #dfdde8!important; border-radius:14px!important;
+        background:#fff!important; color:var(--ink)!important; font-family:'DM Sans',sans-serif!important;
+        font-size:.96rem!important; padding:.85rem 1rem!important; height:52px!important; box-shadow:none!important; }
+    .stTextInput > div > div > input:focus { border-color:#b9b3d8!important;
+        box-shadow:0 0 0 3px rgba(115,103,240,.08)!important; }
+    .stTextInput > label { color:var(--ink)!important; font-weight:700!important; font-size:.8rem!important; }
+    .primary-button > div > button { background:var(--ink)!important; color:#fff!important;
+        border:1px solid var(--ink)!important; min-height:52px!important; border-radius:14px!important; font-size:.92rem!important; }
+    .primary-button > div > button:hover { background:#22203d!important; border-color:#22203d!important;
+        box-shadow:0 8px 24px rgba(13,13,36,.15)!important; }
+    .chip { display:inline-block; padding:.42rem .72rem; border-radius:999px; border:1px solid #e4e2ec;
+            background:#fff; color:#77758a; font-size:.72rem; margin:.25rem .25rem 0 0; }
+
+    .pipeline-title { font-family:'Manrope',sans-serif; font-size:1.7rem; font-weight:800;
+                      letter-spacing:-.045em; color:var(--ink); margin:.4rem 0 1rem; }
+    .pipeline-card { border:1px solid var(--line); background:#fff; border-radius:17px;
+                     padding:1rem 1.1rem; margin-bottom:.75rem; }
+    .pipeline-number { color:var(--purple); font-size:.68rem; font-weight:800; letter-spacing:.08em; }
+    .pipeline-name { color:var(--ink); font-family:'Manrope',sans-serif; font-weight:800;
+                     font-size:.93rem; margin-left:.5rem; }
+    .pipeline-desc { color:var(--muted); font-size:.74rem; margin-top:.45rem; line-height:1.45; }
+    .waiting,.done,.running { float:right; font-size:.62rem; letter-spacing:.08em; font-weight:700; }
+    .waiting { color:#aaa7b4; } .done { color:#45a97a; } .running { color:#e66c9b; }
+
+    .result-box { border:1px solid var(--line); border-radius:22px; padding:1.6rem;
+                  background:#fff; margin:1rem 0; box-shadow:0 8px 30px rgba(21,19,45,.035); }
+    .result-label,.feedback-label { font-size:.68rem; font-weight:800; letter-spacing:.11em;
+                                    text-transform:uppercase; margin-bottom:.8rem; }
+    .result-label { color:var(--purple); }
+    .feedback-box { border:1px solid #eadff0; background:#fff9fc; border-radius:22px;
+                    padding:1.6rem; margin:1rem 0; }
+    .feedback-label { color:#e66c9b; }
+    .stDownloadButton > button { border-radius:999px!important; font-weight:700!important;
+                                 border:1px solid var(--line)!important; background:#fff!important; color:var(--ink)!important; }
+    .divider { height:1px; background:#efedf4; margin:3rem 0; }
+    .demo-note { color:#a09dab; font-size:.7rem; margin-top:.6rem; }
+    .footer { text-align:center; color:#aaa7b4; font-size:.72rem; padding:3rem 0 1rem; }
+
+    @media (max-width:800px) {
+        .block-container { padding:1rem 1.1rem 3rem; }
+        .nav { gap:1rem; overflow-x:auto; }
+        .nav-item,.nav-note { display:none; }
+        .hero h1 { font-size:3.3rem; }
+    }
+    </style>
+    ''',
+    unsafe_allow_html=True,
+)
+
+# Navigation
+st.markdown(
+    '''
+    <div class="nav">
+        <div class="brand">ResearchMind</div>
+        <div class="nav-item">Discover <span>⌄</span></div>
+        <div class="nav-item">Research <span>⌄</span></div>
+        <div class="nav-item">AI Agents <span>⌄</span></div>
+        <div class="nav-item">About <span>⌄</span></div>
+        <div class="nav-note">AI-powered research workspace</div>
     </div>
-    """, unsafe_allow_html=True)
+    ''',
+    unsafe_allow_html=True,
+)
 
+# Hero
+st.markdown(
+    '''
+    <section class="hero">
+        <div class="eyebrow">Multi-agent AI research</div>
+        <h1>Know what changed.<br><span class="accent">Understand why it matters.</span></h1>
+        <p>Discover the latest stories, then turn any topic into a structured research report using specialized AI agents.</p>
+    </section>
+    ''',
+    unsafe_allow_html=True,
+)
 
-# ── Session state init ────────────────────────────────────────────────────────
-for key in ("results", "running", "done"):
-    if key not in st.session_state:
-        st.session_state[key] = {} if key == "results" else False
+# Latest 24 hours
+st.markdown(
+    '''
+    <div class="section-top">
+        <div>
+            <div class="section-kicker">Latest 24 hours</div>
+            <div class="section-title">What changed recently?</div>
+            <div class="section-description">Demo stories for the homepage — click any card to expand it.</div>
+        </div>
+    </div>
+    ''',
+    unsafe_allow_html=True,
+)
 
-
-# ── Hero ──────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="hero">
-    <div class="hero-eyebrow">Multi-Agent AI System</div>
-    <h1>Research<span>Mind</span></h1>
-    <p class="hero-sub">
-        Four specialized AI agents collaborate — searching, scraping, writing,
-        and critiquing — to deliver a polished research report on any topic.
-    </p>
-</div>
-<div class="divider"></div>
-""", unsafe_allow_html=True)
-
-
-# ── Layout: input left, pipeline right ───────────────────────────────────────
-col_input, col_spacer, col_pipeline = st.columns([5, 0.5, 4])
-
-with col_input:
-    st.markdown('<div class="input-card">', unsafe_allow_html=True)
-    topic = st.text_input(
-        "Research Topic",
-        placeholder="e.g. Quantum computing breakthroughs in 2025",
-        key="topic_input",
-        label_visibility="visible",
+refresh_col, note_col = st.columns([1.5, 5])
+with refresh_col:
+    if st.button("↻  Refresh 24h news", use_container_width=True):
+        st.session_state.news_set = (st.session_state.news_set + 1) % len(DEMO_NEWS)
+        st.rerun()
+with note_col:
+    st.markdown(
+        '<div class="demo-note">Demo mode · refresh cycles through a different set of stories.</div>',
+        unsafe_allow_html=True,
     )
-    run_btn = st.button("⚡  Run Research Pipeline", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Example chips
-    st.markdown("""
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem;">
-        <span style="font-family:'DM Mono',monospace;font-size:0.68rem;color:#605850;letter-spacing:0.1em;">TRY →</span>
-    """, unsafe_allow_html=True)
-    examples = ["LLM agents 2025", "CRISPR gene editing", "Fusion energy progress"]
-    for ex in examples:
-        st.markdown(f"""
-        <span style="
-            background:rgba(255,255,255,0.04);
-            border:1px solid rgba(255,255,255,0.08);
-            border-radius:6px;
-            padding:0.25rem 0.7rem;
-            font-size:0.75rem;
-            color:#a09890;
-            font-family:'DM Sans',sans-serif;
-            cursor:default;
-        ">{ex}</span>
-        """, unsafe_allow_html=True)
+news_items = DEMO_NEWS[st.session_state.news_set]
+for row_start in range(0, len(news_items), 3):
+    cols = st.columns(3, gap="medium")
+    for col, item in zip(cols, news_items[row_start:row_start + 3]):
+        with col:
+            with st.expander(item["title"], expanded=False):
+                st.markdown(
+                    f'''
+                    <span class="news-category">{item["category"]}</span>
+                    <div class="news-title">{item["title"]}</div>
+                    <div class="news-summary">{item["summary"]}</div>
+                    <div class="news-meta">{item["source"]} &nbsp;·&nbsp; {item["time"]}</div>
+                    <br>
+                    <div style="color:#77758a;font-size:.82rem;line-height:1.65;">{item["details"]}</div>
+                    ''',
+                    unsafe_allow_html=True,
+                )
+
+# Research area
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+research_left, research_right = st.columns([5.4, 3.6], gap="large")
+
+with research_left:
+    st.markdown(
+        '''
+        <div class="research-box">
+            <div class="section-kicker">Deep research</div>
+            <div class="research-heading">Research a topic.</div>
+            <div class="research-sub">Search the web, read a relevant source, generate a report, and have another AI chain critique it.</div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+    topic = st.text_input(
+        "Research topic",
+        placeholder="e.g. Quantum computing breakthroughs in 2026",
+        key="topic_input",
+    )
+
+    st.markdown('<div class="primary-button">', unsafe_allow_html=True)
+    run_btn = st.button("✦  Run Research Pipeline", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-with col_pipeline:
-    st.markdown('<div class="section-heading">Pipeline</div>', unsafe_allow_html=True)
+    st.markdown(
+        '''
+        <div style="margin-top:1rem;">
+            <span style="color:#9996a5;font-size:.72rem;font-weight:700;">TRY</span>
+            <span class="chip">AI agents</span>
+            <span class="chip">CRISPR gene editing</span>
+            <span class="chip">Fusion energy</span>
+        </div></div>
+        ''',
+        unsafe_allow_html=True,
+    )
 
-    r = st.session_state.results
-    done = st.session_state.done
+with research_right:
+    st.markdown('<div class="pipeline-title">Pipeline</div>', unsafe_allow_html=True)
 
-    def s(step):
-        if not r:
-            return "waiting"
-        steps = ["search", "reader", "writer", "critic"]
-        idx = steps.index(step)
-        completed = list(r.keys())
-        # figure out which steps are done
-        if step in r:
-            return "done"
-        # which step is running now (first not in r)
-        if st.session_state.running:
-            for i, k in enumerate(steps):
-                if k not in r:
-                    return "running" if k == step else "waiting"
-        return "waiting"
+    steps = [
+        ("01", "Search Agent", "Gathers recent web information"),
+        ("02", "Reader Agent", "Scrapes & extracts deep content"),
+        ("03", "Writer Chain", "Drafts the full research report"),
+        ("04", "Critic Chain", "Reviews & scores the report"),
+    ]
 
-    step_card("01", "Search Agent",  s("search"), "Gathers recent web information")
-    step_card("02", "Reader Agent",  s("reader"), "Scrapes & extracts deep content")
-    step_card("03", "Writer Chain",  s("writer"), "Drafts the full research report")
-    step_card("04", "Critic Chain",  s("critic"), "Reviews & scores the report")
+    for key, (num, name, desc) in zip(
+        ["search", "reader", "writer", "critic"], steps
+    ):
+        if key in st.session_state.results:
+            status = '<span class="done">✓ DONE</span>'
+        elif st.session_state.running:
+            status = '<span class="running">● RUNNING</span>'
+        else:
+            status = '<span class="waiting">WAITING</span>'
 
+        st.markdown(
+            f'''
+            <div class="pipeline-card">
+                {status}
+                <span class="pipeline-number">{num}</span>
+                <span class="pipeline-name">{name}</span>
+                <div class="pipeline-desc">{desc}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
 
-# ── Run pipeline ──────────────────────────────────────────────────────────────
+# Start pipeline
 if run_btn:
     if not topic.strip():
         st.warning("Please enter a research topic first.")
@@ -404,105 +388,69 @@ if run_btn:
         st.session_state.done = False
         st.rerun()
 
+# Run pipeline
 if st.session_state.running and not st.session_state.done:
-    results = {}
     topic_val = st.session_state.topic_input
 
-    # ── Step 1: Search ──
-    with st.spinner("🔍  Search Agent is working…"):
-        search_agent = build_search_agent()
-        sr = search_agent.invoke({
-            "messages": [("user", f"Find recent, reliable and detailed information about: {topic_val}")]
-        })
-        results["search"] = sr["messages"][-1].content
-        st.session_state.results = dict(results)
-    st.rerun() if False else None   # keep inline for now
+    with st.spinner("ResearchMind is working through the pipeline…"):
+        try:
+            pipeline_result = run_research_pipeline(topic_val)
+        except Exception as e:
+            st.session_state.running = False
+            st.error(f"Research pipeline failed: {e}")
+            st.stop()
 
-    # ── Step 2: Reader ──
-    with st.spinner("📄  Reader Agent is scraping top resources…"):
-        reader_agent = build_reader_agent()
-        rr = reader_agent.invoke({
-            "messages": [("user",
-                f"Based on the following search results about '{topic_val}', "
-                f"pick the most relevant URL and scrape it for deeper content.\n\n"
-                f"Search Results:\n{results['search'][:800]}"
-            )]
-        })
-        results["reader"] = rr["messages"][-1].content
-        st.session_state.results = dict(results)
-
-    # ── Step 3: Writer ──
-    with st.spinner("✍️  Writer is drafting the report…"):
-        research_combined = (
-            f"SEARCH RESULTS:\n{results['search']}\n\n"
-            f"DETAILED SCRAPED CONTENT:\n{results['reader']}"
-        )
-        results["writer"] = writer_chain.invoke({
-            "topic": topic_val,
-            "research": research_combined
-        })
-        st.session_state.results = dict(results)
-
-    # ── Step 4: Critic ──
-    with st.spinner("🧐  Critic is reviewing the report…"):
-        results["critic"] = critic_chain.invoke({
-            "report": results["writer"]
-        })
-        st.session_state.results = dict(results)
-
+    st.session_state.results = {
+        "search": pipeline_result.get("search_results", ""),
+        "reader": pipeline_result.get("scraped_content", ""),
+        "writer": pipeline_result.get("report", ""),
+        "critic": pipeline_result.get("feedback", ""),
+    }
     st.session_state.running = False
     st.session_state.done = True
     st.rerun()
 
-
-# ── Results display ───────────────────────────────────────────────────────────
+# Results
 r = st.session_state.results
-
 if r:
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-heading">Results</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-kicker">Research output</div><div class="section-title">Your research report</div>',
+        unsafe_allow_html=True,
+    )
 
-    # Raw outputs in expanders
-    if "search" in r:
-        with st.expander("🔍 Search Results (raw)", expanded=False):
-            st.markdown(f'<div class="result-panel"><div class="result-panel-title">Search Agent Output</div>'
-                        f'<div class="result-content">{r["search"]}</div></div>', unsafe_allow_html=True)
+    if r.get("search"):
+        with st.expander("🔎 View raw search results"):
+            st.markdown(r["search"])
 
-    if "reader" in r:
-        with st.expander("📄 Scraped Content (raw)", expanded=False):
-            st.markdown(f'<div class="result-panel"><div class="result-panel-title">Reader Agent Output</div>'
-                        f'<div class="result-content">{r["reader"]}</div></div>', unsafe_allow_html=True)
+    if r.get("reader"):
+        with st.expander("📄 View scraped source content"):
+            st.markdown(r["reader"])
 
-    # Final report
-    if "writer" in r:
-        st.markdown("""
-        <div class="report-panel">
-            <div class="panel-label orange">📝 Final Research Report</div>
-        """, unsafe_allow_html=True)
-        st.markdown(r["writer"])   # render markdown natively
+    if r.get("writer"):
+        st.markdown(
+            '<div class="result-box"><div class="result-label">Final research report</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(r["writer"])
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Download
         st.download_button(
-            label="⬇  Download Report (.md)",
+            "↓  Download report (.md)",
             data=r["writer"],
             file_name=f"research_report_{int(time.time())}.md",
             mime="text/markdown",
         )
 
-    # Critic feedback
-    if "critic" in r:
-        st.markdown("""
-        <div class="feedback-panel">
-            <div class="panel-label green">🧐 Critic Feedback</div>
-        """, unsafe_allow_html=True)
+    if r.get("critic"):
+        st.markdown(
+            '<div class="feedback-box"><div class="feedback-label">Critic feedback</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(r["critic"])
         st.markdown("</div>", unsafe_allow_html=True)
 
-
-# ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="notice">
-    ResearchMind · Powered by LangChain multi-agent pipeline · Built with Streamlit
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    '<div class="footer">ResearchMind · Search → Read → Write → Critique</div>',
+    unsafe_allow_html=True,
+)
