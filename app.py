@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 from agents import build_reader_agent, build_search_agent, writer_chain, critic_chain
+from RAG import create_vector_store, retrieve_relevant_chunks
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -630,18 +631,35 @@ if st.session_state.running and not st.session_state.done:
             "messages": [("user",
                 f"Based on the following search results about '{topic_val}', "
                 f"pick the most relevant URL and scrape it for deeper content.\n\n"
-                f"Search Results:\n{results['search'][:800]}"
+                f"Search Results:\n{results['search']}"
             )]
         })
         results["reader"] = rr["messages"][-1].content
+        st.session_state.results = dict(results)
+
+    # ── RAG layer ──
+    # Pass the complete scraped content from the Reader Agent to RAG.
+    # RAG chunks/embeds the content and retrieves the most relevant
+    # chunks for the current research topic.
+    with st.spinner("  Preparing relevant research context…"):
+        vector_store = create_vector_store(
+            results["reader"]
+        )
+
+        results["retrieved_chunks"] = retrieve_relevant_chunks(
+            vector_store,
+            topic_val
+        )
+
         st.session_state.results = dict(results)
 
     # ── Step 3: Writer ──
     with st.spinner("  Writer is drafting the report…"):
         research_combined = (
             f"SEARCH RESULTS:\n{results['search']}\n\n"
-            f"DETAILED SCRAPED CONTENT:\n{results['reader']}"
+            f"RELEVANT RETRIEVED CONTENT:\n{results['retrieved_chunks']}"
         )
+
         results["writer"] = writer_chain.invoke({
             "topic": topic_val,
             "research": research_combined
