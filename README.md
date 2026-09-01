@@ -1,465 +1,162 @@
-ResearchMind
+# ResearchMind — AI Multi-Agent Research Assistant
 
-AI-powered multi-agent research and news discovery platform
+ResearchMind is an AI-powered web application that turns a single topic into a complete, fact-checked research report. It orchestrates four specialized AI agents — **Search**, **Reader**, **Writer**, and **Critic** — that work in sequence to gather live information from the web, extract deeper context, draft a structured report, and critically review the output before handing it back to the user.
 
-ResearchMind is an AI-powered web application that helps users stay
-updated with recent news and turn any research topic into a structured
-research report.
+Built for the 29–30 August Hackathon.
 
-It combines Tavily web/news search, Mistral AI, LangChain
-agents, and a multi-stage research pipeline to move from information
-discovery to deeper reading, report generation, and critical review.
+---
 
-🚀 Project Overview
+##  Problem Statement
 
-Researching a topic manually often requires switching between search
-engines, opening multiple articles, extracting useful information,
-writing notes, and checking the final result.
+Researching any topic thoroughly today means juggling multiple tabs, sifting through search results, reading full articles, and manually synthesizing everything into a coherent, well-structured write-up — a process that is slow, repetitive, and easy to get wrong.
 
-ResearchMind simplifies this workflow through specialized AI components.
+**ResearchMind** solves this by automating the entire research workflow with a pipeline of cooperating AI agents, each responsible for one stage of the process, so a user can go from "a topic I want to understand" to "a structured, reviewed report" in a single click.
 
-The homepage first presents news from the past 24 hours, dynamically
-fetched through the Tavily API. Users can refresh the feed to request a
-fresh set of results.
+---
 
-For deeper research, users can enter any topic and start the multi-agent
-research pipeline:
+##  Features
 
-User Topic
-    ↓
-Search Agent
-    ↓
-Reader Agent
-    ↓
-Writer Chain
-    ↓
-Critic Chain
-    ↓
-Structured Research Report
+- **Four-agent research pipeline**
+  -  **Search Agent** — queries the live web (via Tavily) for recent, relevant sources on the topic.
+  -  **Reader Agent** — scrapes and extracts clean, deep content from the most relevant source found.
+  -  **Writer Chain** — synthesizes the gathered research into a structured report (Introduction, Key Findings, Conclusion, Sources).
+  -  **Critic Chain** — independently reviews the report, scores it out of 10, and lists strengths and areas to improve.
+- **Live pipeline visualization** — a real-time UI panel showing each agent's status (waiting / running / done) as the pipeline executes.
+- **Clean, modern web interface** built with Streamlit, including example topic chips for quick testing.
+- **Downloadable output** — export the final report as a Markdown (`.md`) file.
+- **Actual AI agent usage** — powered by [LangChain](https://www.langchain.com/) agents and [Mistral AI](https://mistral.ai/) (`mistral-medium-3-5`) for reasoning, tool use, and text generation.
 
-🎯 Problem Statement
+---
 
-Finding reliable and useful information on a current topic can be
-time-consuming.
+## 🛠️ Tech Stack
 
-A typical research process involves:
+| Layer | Technology |
+|---|---|
+| Frontend / UI | [Streamlit](https://streamlit.io/) |
+| Agent framework | [LangChain](https://www.langchain.com/) (`create_agent`) |
+| LLM | [Mistral AI](https://mistral.ai/) via `langchain-mistralai` |
+| Web search tool | [Tavily API](https://tavily.com/) |
+| Web scraping | `requests` + `BeautifulSoup4` |
+| Config | `python-dotenv` |
+| Language | Python 3.10+ |
 
-Searching for recent information
+---
 
-Identifying useful sources
+##  Project Structure
 
-Opening and reading long webpages
-
-Extracting relevant information
-
-Combining information from different sources
-
-Writing a structured report
-
-Reviewing the quality of the final report
-
-ResearchMind addresses this problem by creating an AI-assisted research
-workflow that separates these responsibilities into specialized stages.
-
-💡 Solution
-
-ResearchMind provides two connected experiences.
-
-1. Latest 24-Hour News
-
-The homepage dynamically retrieves recent news using Tavily.
-
-The news discovery layer:
-
-Searches for important news from the past 24 hours
-
-Uses a category-oriented prompt covering areas such as technology,
-AI, business, science, politics, environment, and trading
-
-Displays article title, source, summary, and URL
-
-Allows users to expand individual news cards
-
-Provides a Refresh 24h News button that triggers a new API
-request
-
-2. Deep Research Pipeline
-
-Users can enter a research topic and run a multi-stage AI workflow.
-
-Search Agent --- Finds recent, reliable and relevant web information
-using the Tavily search tool.
-
-Reader Agent --- Selects a relevant URL and uses the scraping tool
-to extract deeper webpage content.
-
-Writer Chain --- Combines search results and scraped content to
-generate a structured research report.
-
-Critic Chain --- Reviews the generated report and provides a score,
-strengths, areas for improvement, and a final verdict.
-
-✨ Key Features
-
-📰 Dynamic 24-hour news discovery
-
-🔄 Refreshable news feed
-
-🗂️ Category-oriented news retrieval
-
-📖 Expandable news cards
-
-🔎 AI-powered web research
-
-🌐 Tavily web/news search integration
-
-📄 Webpage content extraction
-
-✍️ AI-generated research reports
-
-🧐 AI critic/reviewer
-
-📊 Research quality score and feedback
-
-⬇️ Downloadable Markdown reports
-
-🖥️ Streamlit web interface
-
-🤖 Specialized multi-agent architecture
-
-🧠 AI / Agent Architecture
-
-News Discovery
-
-Streamlit
-   ↓
-hrs24_news()
-   ↓
-get_latest_news()
-   ↓
-News Agent
-   ↓
-latest_news tool
-   ↓
-Tavily API
-   ↓
-Recent News
-   ↓
-Expandable News Cards
-
-Research Pipeline
-
-                    ┌─────────────────┐
-                    │   User Topic    │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │  Search Agent   │
-                    │     Tavily      │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │  Reader Agent   │
-                    │  URL Scraping   │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │  Writer Chain   │
-                    │   Mistral AI    │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │  Critic Chain   │
-                    │   Mistral AI    │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │ Research Report │
-                    └─────────────────┘
-
-The architecture separates information retrieval, reading, writing, and
-review instead of asking a single LLM prompt to perform the entire
-workflow.
-
-🛠️ Technology Stack
-
-Technology      Purpose
-
-Python          Core application language
-Streamlit       Web application interface
-LangChain       Agent and LLM orchestration
-Mistral AI      Language model used by agents and chains
-Tavily          Web and news search
-BeautifulSoup   Webpage text extraction
-Requests        HTTP requests for webpage scraping
-python-dotenv   Environment variable management
-Rich            Terminal output formatting
-
-📁 Project Structure
-
+```
 multi_agent_news/
-│
-├── app.py
-├── agents.py
-├── pipeline.py
-├── tools.py
-├── requirements.txt
-├── README.md
+├── agents.py         # Agent + chain definitions (search, reader, writer, critic)
+├── tools.py           # Tool implementations: web_search (Tavily), scrape_url (BeautifulSoup)
+├── pipeline.py         # Orchestrates the 4-agent pipeline end-to-end (CLI runnable)
+├── app.py             # Streamlit web application (UI + pipeline integration)
+├── requirements.txt      # Python dependencies
+├── .env             # API keys (not committed — see setup below)
 ├── .gitignore
-└── .env
+└── README.md
+```
 
-app.py
+---
 
-Contains the Streamlit interface, including the latest 24-hour news
-feed, news refresh, expandable cards, research input, pipeline status,
-report, critic feedback, and report download.
+##  Setup / Installation
 
-agents.py
+### 1. Clone the repository
 
-Defines the Search Agent, Reader Agent, Latest News Agent, Writer Chain,
-and Critic Chain.
-
-tools.py
-
-Contains the external tools used by the agents:
-
-web_search
-
-scrape_url
-
-latest_news
-
-pipeline.py
-
-Controls the research workflow and connects:
-
-Search → Read → Write → Critique
-
-⚙️ Setup & Installation
-
-1. Clone the repository
-
-git clone <YOUR_PUBLIC_GITHUB_REPOSITORY_URL>
+```bash
+git clone https://github.com/<your-username>/multi_agent_news.git
 cd multi_agent_news
+```
 
-2. Create a virtual environment
+### 2. Create and activate a virtual environment
 
-Windows:
-
+```bash
 python -m venv .venv
+
+# Windows
 .venv\Scripts\activate
 
-Linux / WSL / macOS:
-
-python3 -m venv .venv
+# macOS / Linux
 source .venv/bin/activate
+```
 
-3. Install dependencies
+### 3. Install dependencies
 
+```bash
 pip install -r requirements.txt
+```
 
-4. Configure API keys
+### 4. Configure environment variables
 
-Create a .env file in the project root:
+Create a `.env` file in the project root with the following keys:
 
-TAVILY_API_KEY=your_tavily_api_key
-MISTRAL_API_KEY=your_mistral_api_key
+```env
+TAVILY_API_KEY=your_tavily_api_key_here
+MISTRAL_API_KEY=your_mistral_api_key_here
+```
 
-Never commit .env or API keys to the public repository.
+- Get a Tavily API key from [tavily.com](https://tavily.com/)
+- Get a Mistral API key from [console.mistral.ai](https://console.mistral.ai/)
 
-▶️ Running the Application
+---
 
+## ▶️ Usage
+
+### Run as a web app (recommended)
+
+```bash
 streamlit run app.py
+```
 
-Then open:
+Then open the local URL Streamlit prints (usually `http://localhost:8501`) in your browser:
 
-http://localhost:8501
+1. Enter a research topic in the input box (or click one of the example chips).
+2. Click **Run research →**.
+3. Watch the four-agent pipeline progress in real time.
+4. Read the generated **Final Research Report** and the **Critic Feedback** below it.
+5. Optionally, click **Download Report (.md)** to save the report locally.
 
-📖 Usage
+### Run from the command line
 
-View Latest News
+```bash
+python pipeline.py
+```
 
-Open the application.
+You'll be prompted to enter a topic, and the pipeline will print each stage's output (search results, scraped content, final report, and critic feedback) directly to the terminal.
 
-The Latest 24 Hours section loads automatically.
+---
 
-News is fetched dynamically through the Tavily API.
+## 🧠 How It Works
 
-Click a news card to expand it.
+```
+User Topic
+    │
+    ▼
+1. Search Agent  ──► Tavily web search → titles, URLs, snippets
+    │
+    ▼
+2. Reader Agent  ──► Scrapes the most relevant URL for deeper content
+    │
+    ▼
+3. Writer Chain  ──► Synthesizes research into a structured report
+    │
+    ▼
+4. Critic Chain  ──► Scores and critiques the report
+    │
+    ▼
+Final Report + Feedback (displayed in UI, downloadable as .md)
+```
 
-Use Refresh 24h News to perform a fresh search.
+---
 
-Research a Topic
+## 🚀 Future Improvements
 
-Enter a topic in Research a Topic.
+- Adding RAG so the system can retrieve the most relevant evidence from the scraped research instead of simply passing all the extracted content to the LLM.
+- Support multiple source scraping (not just the single top URL) for richer reports.
+- Add citation-level linking between report claims and their source URLs.
+- Allow the Critic Agent's feedback to trigger an automatic re-draft loop.
+- Add report history / session persistence across runs.
 
-Click Run Research Pipeline.
+---
 
-The Search Agent finds relevant web information.
 
-The Reader Agent extracts deeper content from a selected source.
 
-The Writer Chain generates the report.
-
-The Critic Chain evaluates it.
-
-Review or download the final report.
-
-🔄 Research Workflow
-
-Step 1 --- Search Agent
-
-The Search Agent receives the user's topic and searches the web for
-recent and reliable information.
-
-Step 2 --- Reader Agent
-
-The Reader Agent selects a relevant URL and uses scrape_url to extract
-webpage content.
-
-Step 3 --- Writer Chain
-
-The Writer Chain combines the search results and scraped content and
-generates:
-
-Introduction
-
-Key Findings
-
-Conclusion
-
-Sources
-
-Step 4 --- Critic Chain
-
-The Critic Chain evaluates the report and returns:
-
-Score: X/10
-
-Strengths:
-- ...
-
-Areas to Improve:
-- ...
-
-One line verdict:
-...
-
-🧪 Hackathon Demo Flow
-
-Demo 1 --- Current News
-
-Open ResearchMind
-       ↓
-Latest 24 Hours
-       ↓
-Fresh Tavily results
-       ↓
-Expand a news card
-       ↓
-Open original source
-       ↓
-Refresh 24h News
-       ↓
-New API results
-
-Demo 2 --- AI Research
-
-Example topic:
-
-AI agents in software development
-
-Then demonstrate:
-
-Search Agent
-      ↓
-Reader Agent
-      ↓
-Writer Chain
-      ↓
-Critic Chain
-      ↓
-Final Report
-
-This demonstrates actual AI usage across multiple stages of the
-application.
-
-🏆 Why ResearchMind?
-
-ResearchMind focuses on a practical problem: turning scattered and
-constantly changing web information into useful research.
-
-Instead of treating AI as a single chatbot, the application uses
-specialized components for different stages of the workflow.
-
-The core idea is:
-
-Discover → Read → Write → Critique
-
-The application combines current information retrieval with AI reasoning
-and review, giving users both current information and a deeper research
-workflow.
-
-🔮 Future Improvements
-
-Deterministic one-article-per-category news retrieval
-
-Source credibility scoring
-
-Duplicate-news detection
-
-More precise publication-time filtering
-
-Multiple-source comparison
-
-Citation verification
-
-Research history
-
-Saved reports
-
-PDF export
-
-Personalized news categories
-
-Fact-checking agent
-
-Parallel research agents
-
-Public deployment
-
-📌 Current Limitations
-
-News availability depends on the Tavily API.
-
-Some websites may block automated scraping or require JavaScript
-rendering.
-
-AI-generated reports should be reviewed before being treated as
-authoritative.
-
-The current category-oriented news prompt does not guarantee exactly
-one article from every category.
-
-The current system retrieves a limited number of articles for the
-homepage.
-
-👥 Team
-
-Project: ResearchMind
-Hackathon: InnovateX AI Hackathon
-
-Team Members
-
-Add team member name
-
-Add team member name
-
-Add team member name
-
-📄 License
-
-This project was created for the InnovateX AI Hackathon.
-
-Add an open-source license if the project will be distributed for public
-reuse.
